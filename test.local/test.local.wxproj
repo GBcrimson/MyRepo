@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<winginx>
+  <project>
+    <name>test.local</name>
+    <url>http://test.local/</url>
+    <root>home/test.local</root>
+  </project>
+</winginx>

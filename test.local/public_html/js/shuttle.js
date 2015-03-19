@@ -1,0 +1,196 @@
+require([ 'bower_components/threex.spaceships/package.require.js'
+  , 'vendor/three.js/examples/js/loaders/OBJMTLLoader.js'
+  , 'vendor/three.js/examples/js/loaders/OBJLoader.js'
+  , 'vendor/three.js/examples/js/loaders/MTLLoader.js'
+  , 'bower_components/threex.keyboardstate/package.require.js'
+  , 'bower_components/threex.planets/package.require.js'
+  ], function(){
+  // detect WebGL
+  if( !Detector.webgl ){
+    Detector.addGetWebGLMessage();
+    throw 'WebGL Not Available'
+  } 
+  ////////////////////////////////////////////////////
+  //// Connection
+  ///////////////////////////////////////////////////
+    var socket = io('http://localhost:6588/');
+    socket.emit('get qr', function(qr) {
+        $('#qr').html(qr);
+    });
+    socket.on('leftstep', function() {
+     left();
+    });
+    socket.on('rightstep', function() {
+     right();
+    });
+    socket.on('binded', function() {
+      $("#messages").append("<li style=\"color: green;\">К Вам присоединился оппонент</li>");
+    });
+    socket.on('unbinded', function() {
+      $("#messages").append("<li style=\"color: red;\">Оппонент отсоединился</li>");
+    });
+  ////////////////////////////////////////////////////
+  // setup webgl renderer full page
+  var renderer  = new THREE.WebGLRenderer();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  document.body.appendChild( renderer.domElement );
+  // setup a scene and camera
+  var score = 0;
+  var scene = new THREE.Scene();
+  var camera  = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
+  camera.position.z = 3;
+
+  // declare the rendering loop
+  var onRenderFcts= [];
+
+  // handle window resize events
+  var winResize = new THREEx.WindowResize(renderer, camera)
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //    default 3 points lightning          //
+  //////////////////////////////////////////////////////////////////////////////////
+  
+  var ambientLight= new THREE.AmbientLight( 0x020202 )
+  scene.add( ambientLight)
+  var frontLight  = new THREE.DirectionalLight('white', 1)
+  frontLight.position.set(0.5, 0.5, 2)
+  scene.add( frontLight )
+  var backLight = new THREE.DirectionalLight('white', 0.75)
+  backLight.position.set(-0.5, -0.5, -2)
+  scene.add( backLight )    
+  
+  //////////////////////////////////////////////////////////////////////////////////
+  //    add star sphere             //
+  //////////////////////////////////////////////////////////////////////////////////
+  var geometry  = new THREE.SphereGeometry(90, 32, 32)
+  var url   = 'bower_components/threex.planets/examples/images/galaxy_starfield.png'
+  var material  = new THREE.MeshBasicMaterial({
+    map : THREE.ImageUtils.loadTexture(url),
+    side  : THREE.BackSide
+  })
+  var starSphere  = new THREE.Mesh(geometry, material)
+  scene.add(starSphere)
+  
+  //////////////////////////////////////////////////////////////////////////
+  //  Controlling
+  //////////////////////////
+  function left () {
+      spaceship.position.x  -= 0.3;
+  }
+    function right () {
+      spaceship.position.x  += 0.3;
+  }
+  //////////////////////////////////////////////////////////////////////////////////
+  //    add a moon              //
+  //////////////////////////////////////////////////////////////////////////////////
+  
+  var moonMesh  = THREEx.Planets.createMoon()
+  scene.add(moonMesh)
+  function resetMoon(){
+    moonMesh.position.y = 5
+    moonMesh.position.y += 3 * (Math.random()-0.5)
+    moonMesh.position.x = 4 * (Math.random()-0.5)       
+  }
+  resetMoon() 
+
+  onRenderFcts.push(function(delta, now){
+    // move the moon to the left
+    moonMesh.position.y += -1 * delta;
+    // make it warp
+    if( moonMesh.position.y < -3 ){
+      score+=1
+      resetMoon()
+    }
+  })
+
+  onRenderFcts.push(function(delta, now){
+    // only if the spaceship is loaded
+    if( spaceship === null )    return
+    // compute distance between spaceship and the moon
+    var distance    = moonMesh.position.distanceTo(spaceship.position)
+    if( distance < 0.5 ){
+      var restart = confirm("Good game. Your scores: "+score+ " \n Would you like to restart?")
+      if(restart){
+      score=0
+      resetMoon()
+      }else{
+
+      }
+    
+    }
+  })
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //    add an object and make it move          //
+  //////////////////////////////////////////////////////////////////////////////////
+
+  var spaceship = null;
+  THREEx.SpaceShips.loadSpaceFighter03(function(object3d){
+    scene.add(object3d)
+    spaceship = object3d
+    spaceship.rotateZ(Math.PI)
+    spaceship.rotateX(Math.PI/2)
+    spaceship.position.y    = -0.5  
+  })
+  
+  //////////////////////////////////////////////////////////////////////////////////
+  //    controls by keyboard            //
+  //////////////////////////////////////////////////////////////////////////////////
+  
+  // create keyboard instance
+  var keyboard  = new THREEx.KeyboardState();
+
+  // add function in rendering loop
+  onRenderFcts.push(function(delta, now){
+    // only if the spaceship is loaded
+    if( spaceship === null )  return;
+
+    // set the speed
+    var speed = 1;
+    // only if spaceships is loaded
+    if( keyboard.pressed('left') ){
+        spaceship.position.x  -= speed * delta;
+    }else if( keyboard.pressed('right') ){
+        spaceship.position.x  += speed * delta;
+    }
+  })
+
+  
+  //////////////////////////////////////////////////////////////////////////////////
+  //    Camera Controls             //
+  //////////////////////////////////////////////////////////////////////////////////
+  var mouse = {x : 0, y : 0}
+  document.addEventListener('mousemove', function(event){
+    mouse.x = (event.clientX / window.innerWidth ) - 0.5
+    mouse.y = (event.clientY / window.innerHeight) - 0.5
+  }, false)
+  onRenderFcts.push(function(delta, now){
+    camera.position.x += (mouse.x*5 - camera.position.x) * (delta*3)
+    camera.position.y += (mouse.y*5 - camera.position.y) * (delta*3)
+    camera.lookAt( scene.position )
+  })
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //    render the scene            //
+  //////////////////////////////////////////////////////////////////////////////////
+  onRenderFcts.push(function(){
+    renderer.render( scene, camera );   
+  })
+  
+  //////////////////////////////////////////////////////////////////////////////////
+  //    Rendering Loop runner           //
+  //////////////////////////////////////////////////////////////////////////////////
+  var lastTimeMsec= null
+  requestAnimationFrame(function animate(nowMsec){
+    // keep looping
+    requestAnimationFrame( animate );
+    // measure time
+    lastTimeMsec  = lastTimeMsec || nowMsec-1000/60
+    var deltaMsec = Math.min(200, nowMsec - lastTimeMsec)
+    lastTimeMsec  = nowMsec
+    // call each update function
+    onRenderFcts.forEach(function(onRenderFct){
+      onRenderFct(deltaMsec/1000, nowMsec/1000)
+    })
+  })
+})
